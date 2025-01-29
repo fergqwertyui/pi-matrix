@@ -8,7 +8,7 @@ sudo touch /etc/modprobe.d/alsa-blacklist.conf
 echo "blacklist snd_bcm2835" | sudo tee -a /etc/modprobe.d/alsa-blacklist.conf
 
 install_path=$(pwd)
-venv_path="${install_path}/venv"
+venv_path="${install_path}/.venv"
 
 echo "Creating a Python virtual environment at ${venv_path}..."
 python3 -m venv $venv_path
