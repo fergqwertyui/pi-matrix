@@ -1,1 +1,5 @@
 */__pycache__/*
+.cache
+.cache2
+*.log
+rpi-*

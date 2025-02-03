@@ -1,22 +1,11 @@
 #!/bin/bash
-
+#. "$HOME/.asdf/asdf.sh"
 echo "Ensure packages are installed:"
 sudo apt-get install -y libopenjp2-7 python3-dbus python3-venv
 
 echo "Blacklist soundcard..."
 sudo touch /etc/modprobe.d/alsa-blacklist.conf
 echo "blacklist snd_bcm2835" | sudo tee -a /etc/modprobe.d/alsa-blacklist.conf
-
-install_path=$(pwd)
-venv_path="${install_path}/.venv"
-
-echo "Creating a Python virtual environment at ${venv_path}..."
-python3 -m venv $venv_path
-
-echo "Activating virtual environment..."
-source $venv_path/bin/activate
-
-echo "Installing Python dependencies inside virtual environment:"
 
 echo "Installing spotipy library:"
 pip install spotipy==2.23.0

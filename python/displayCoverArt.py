@@ -9,11 +9,13 @@ from PIL import Image
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 import sys,os
 import configparser
+from spotipy.oauth2 import SpotifyOAuth
 
 if len(sys.argv) > 2:
     username = sys.argv[1]
     token_path = sys.argv[2]
 
+    print(username, token_path)	
     # Configuration file    
     dir = os.path.dirname(__file__)
     filename = os.path.join(dir, '../config/rgb_options.ini')
@@ -31,14 +33,15 @@ if len(sys.argv) > 2:
     config.read(filename)
 
     options = RGBMatrixOptions()
-    options.rows = int(config['DEFAULT']['rows'])
-    options.cols = int(config['DEFAULT']['columns'])
+    options.rows = 32
+    options.cols = 64
     options.chain_length = int(config['DEFAULT']['chain_length'])
-    options.parallel = int(config['DEFAULT']['parallel'])
-    options.hardware_mapping = config['DEFAULT']['hardware_mapping']
+    options.hardware_mapping = "adafruit-hat"
     options.gpio_slowdown = int(config['DEFAULT']['gpio_slowdown'])
     options.brightness = int(config['DEFAULT']['brightness'])
-    options.limit_refresh_rate_hz = int(config['DEFAULT']['refresh_rate'])
+
+
+    print(options)
 
     default_image = os.path.join(dir, config['DEFAULT']['default_image'])
     print(default_image)
@@ -47,9 +50,16 @@ if len(sys.argv) > 2:
     prevSong    = ""
     currentSong = ""
 
+#    client_id = os.environ["SPOTIPY_CLIENT_ID"]
+ #   client_secret = os.environ["SPOTIPY_CLIENT_SECRET"]
+  #  redirect_url = os.environ["SPOTIPY_REDIRECT_URI"]
+
+#    auth_manager = SpotifyOAuth(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_url, scope="user-read-currently-playing")
+
+
     try:
       while True:
-        try:
+#        try:
           imageURL = getSongInfo(username, token_path)[1]
           currentSong = imageURL
 
@@ -61,12 +71,12 @@ if len(sys.argv) > 2:
             prevSong = currentSong
 
           time.sleep(1)
-        except Exception as e:
-          image = Image.open(default_image)
-          image.thumbnail((matrix.width, matrix.height), Image.Resampling.LANCZOS)
-          matrix.SetImage(image.convert('RGB'))
-          print(e)
-          time.sleep(1)
+      #  except Exception as e:
+     #     image = Image.open(default_image)
+    #      image.thumbnail((matrix.width, matrix.height), Image.Resampling.LANCZOS)
+   #       matrix.SetImage(image.convert('RGB'))
+  #        print(e)
+ #         time.sleep(1)
     except KeyboardInterrupt:
       sys.exit(0)
 
