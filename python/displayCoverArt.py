@@ -21,7 +21,7 @@ if len(sys.argv) > 2:
     filename = os.path.join(dir, '../config/rgb_options.ini')
 
     # Configures logger for storing song data    
-    logging.basicConfig(format='%(asctime)s %(message)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', filename='spotipy.log', level=logging.INFO)
+    logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', filename='spotipy.log', level=logging.INFO)
     logger = logging.getLogger('spotipy_logger')
 
     # Automatically deletes logs more than 2000 bytes
@@ -58,6 +58,10 @@ if len(sys.argv) > 2:
     GREY = (128, 128, 128)
     BLACK = (0, 0, 0)
 
+    # Variables for text scrolling
+    scroll_offset = 0
+    scroll_speed = 1  # pixels per frame
+
     try:
         while True:
             # Assume getSongInfo returns a dictionary with song details
@@ -90,19 +94,25 @@ if len(sys.argv) > 2:
             right_panel = Image.new('RGB', (32, 32), BLACK)
             draw = ImageDraw.Draw(right_panel)
             padding = 1  # 1 pixel padding around everything
-            inner_width = 32 - (padding * 2)
+            inner_width = 30  # (32 - 2px padding)
             inner_x_start = padding
 
-            # --- Song Title ---
+            # --- Scrolling Song Title ---
             title_y = padding
-            draw.text((inner_x_start, title_y), title, font=font, fill=WHITE)
+            text_width, _ = draw.textsize(title, font=font)
+            if text_width > inner_width:  # Enable scrolling if text is too long
+                scroll_offset = (scroll_offset - scroll_speed) % (text_width + 10)
+                draw.text((-scroll_offset, title_y), title, font=font, fill=WHITE)
+            else:
+                text_x = (inner_width - text_width) // 2
+                draw.text((inner_x_start + text_x, title_y), title, font=font, fill=WHITE)
 
             # --- Artist Name (Slightly Grey) ---
-            artist_y = title_y + 6  # Place artist slightly below the title
+            artist_y = title_y + 7  # Place artist slightly below the title
             draw.text((inner_x_start, artist_y), artist, font=font, fill=GREY)
 
-            # --- Progress Bar (2px thick, just above play/pause icon) ---
-            progress_bar_y = 22
+            # --- Progress Bar (2px thick, adjusted to fit) ---
+            progress_bar_y = 19
             progress_bar_height = 2
             progress_ratio = min(max(progress_ms / duration_ms, 0), 1)
             filled_width = int(progress_ratio * inner_width)
@@ -113,16 +123,16 @@ if len(sys.argv) > 2:
             draw.rectangle([inner_x_start + filled_width, progress_bar_y, inner_x_start + inner_width, progress_bar_y + progress_bar_height - 1], fill=GREY)
 
             # --- Play/Pause Icon (Smaller & Below Progress Bar) ---
-            icon_size = 6
-            icon_y = progress_bar_y + 5
+            icon_size = 5
+            icon_y = 24  # Moved higher to fit in bounds
             icon_x = inner_x_start + (inner_width - icon_size) // 2
 
             if is_playing:
                 # Draw pause icon: two vertical bars
-                bar_width = 2
+                bar_width = 1
                 gap = 1
-                draw.rectangle([icon_x, icon_y, icon_x + bar_width - 1, icon_y + icon_size - 1], fill=SPOTIFY_GREEN)
-                draw.rectangle([icon_x + bar_width + gap, icon_y, icon_x + bar_width + gap + bar_width - 1, icon_y + icon_size - 1], fill=SPOTIFY_GREEN)
+                draw.rectangle([icon_x, icon_y, icon_x + bar_width, icon_y + icon_size - 1], fill=SPOTIFY_GREEN)
+                draw.rectangle([icon_x + bar_width + gap, icon_y, icon_x + bar_width + gap + bar_width, icon_y + icon_size - 1], fill=SPOTIFY_GREEN)
             else:
                 # Draw play icon: a right-pointing triangle
                 triangle = [(icon_x, icon_y),
