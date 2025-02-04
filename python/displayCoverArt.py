@@ -98,8 +98,9 @@ if len(sys.argv) > 2:
     default_image = os.path.join(dir_path, config['DEFAULT']['default_image'])
     matrix = RGBMatrix(options=options)
 
-    title_font = ImageFont.truetype("fonts/5x7.ttf")
-    artist_font = ImageFont.truetype("fonts/5x7.ttf")
+    font_title = graphics.Font()
+    font_title.LoadFont("fonts/7x13.bdf")
+    font_artist = font_title
 
     # Define colors
     SPOTIFY_GREEN = graphics.Color(30, 215, 96)
