@@ -27,13 +27,6 @@ song_data = {
 image_url = None
 album_image = None
 
-def measure_text(font, text):
-    width = 0
-    for c in text:
-        width += font.CharacterWidth(ord(c))
-    return width
-
-
 def fetch_song_info(username, token_path, default_image):
     """
     Thread target: updates song info and album art URL in global variables 
@@ -99,27 +92,37 @@ if len(sys.argv) > 2:
     default_image = os.path.join(dir_path, config['DEFAULT']['default_image'])
     matrix = RGBMatrix(options=options)
 
-    # Define PIL colors (tuples) for use with ImageDraw.
-    WHITE_PIL = (255, 255, 255)
-    GREY_PIL = (128, 128, 128)
-    SPOTIFY_GREEN_PIL = (30, 215, 96)
-    BLACK_PIL = (0, 0, 0)
-
-    # Define rgbmatrix.graphics colors for text rendering.
+    # Define colors
     WHITE = graphics.Color(255, 255, 255)
     GREY = graphics.Color(128, 128, 128)
     SPOTIFY_GREEN = graphics.Color(30, 215, 96)
     BLACK = graphics.Color(0, 0, 0)
+
+    # Define PIL colors for progress bar
+    WHITE_PIL = (255, 255, 255)
+    GREY_PIL = (128, 128, 128)
+    SPOTIFY_GREEN_PIL = (30, 215, 96)
+    BLACK_PIL = (0, 0, 0)
 
     # Load font using rgbmatrix graphics
     font_title = graphics.Font()
     font_title.LoadFont("fonts/7x13.bdf")
     font_artist = font_title
 
-    # Scrolling offsets
+    # Helper function to measure text width in pixels
+    def measure_text(font, text):
+        width = 0
+        for c in text:
+            width += font.CharacterWidth(ord(c))
+        return width
+
+    # Scroll variables
+    text_area_left = 32
+    text_area_right = 63
+    text_region_width = text_area_right - text_area_left + 1
     scroll_speed = 1
-    scroll_offset_title = 64
-    scroll_offset_artist = 64
+    scroll_offset_title = 0
+    scroll_offset_artist = 0
 
     # Start background thread to fetch song info
     fetch_thread = threading.Thread(
@@ -134,16 +137,16 @@ if len(sys.argv) > 2:
         offscreen_canvas = matrix.CreateFrameCanvas()
         offscreen_canvas.Clear()
 
-        # Build a composite PIL image (64x32)
+        # Create composite PIL image (64x32)
         composite = Image.new('RGB', (64, 32))
 
-        # Left: Album art or fallback
+        # Left side: album art or fallback
         if album_image:
             composite.paste(album_image, (0, 0))
         else:
             composite.paste(Image.new('RGB', (32, 32), BLACK_PIL), (0, 0))
 
-        # Right panel: progress bar, play/pause, etc.
+        # Right side panel (progress bar and play/pause icon)
         right_panel = Image.new('RGB', (32, 32), BLACK_PIL)
         draw = ImageDraw.Draw(right_panel)
         padding = 1
@@ -156,96 +159,41 @@ if len(sys.argv) > 2:
         icon_size = 6
         progress_bar_height = 2
         progress_bar_y = inner_y_start + inner_height - (icon_size + progress_bar_height)
-        progress_ratio = 0.0
-        if song_data["duration_ms"] != 0:
-            progress_ratio = min(max(song_data["progress_ms"] / song_data["duration_ms"], 0), 1.0)
-
+        progress_ratio = 0 if song_data["duration_ms"] == 0 else min(max(song_data["progress_ms"] / song_data["duration_ms"], 0), 1)
         filled_width = int(progress_ratio * inner_width)
 
-        draw.rectangle(
-            [inner_x_start, progress_bar_y,
-             inner_x_start + filled_width - 1,
-             progress_bar_y + progress_bar_height - 1],
-            fill=WHITE_PIL
-        )
-        draw.rectangle(
-            [inner_x_start + filled_width, progress_bar_y,
-             inner_x_start + inner_width - 1,
-             progress_bar_y + progress_bar_height - 1],
-            fill=GREY_PIL
-        )
+        draw.rectangle([inner_x_start, progress_bar_y, inner_x_start + filled_width, progress_bar_y + progress_bar_height], fill=WHITE_PIL)
+        draw.rectangle([inner_x_start + filled_width, progress_bar_y, inner_x_start + inner_width, progress_bar_y + progress_bar_height], fill=GREY_PIL)
 
         # Play/Pause Icon
         icon_y = progress_bar_y + progress_bar_height + 1
         icon_x = inner_x_start + (inner_width - icon_size) // 2
         if song_data["is_playing"]:
-            # Draw two bars
-            bar_width = 2
-            gap = 2
-            draw.rectangle(
-                [icon_x, icon_y,
-                 icon_x + bar_width - 1, icon_y + icon_size - 1],
-                fill=SPOTIFY_GREEN_PIL
-            )
-            draw.rectangle(
-                [icon_x + bar_width + gap, icon_y,
-                 icon_x + bar_width + gap + bar_width - 1, icon_y + icon_size - 1],
-                fill=SPOTIFY_GREEN_PIL
-            )
+            draw.rectangle([icon_x, icon_y, icon_x + 2, icon_y + icon_size], fill=SPOTIFY_GREEN_PIL)
+            draw.rectangle([icon_x + 4, icon_y, icon_x + 6, icon_y + icon_size], fill=SPOTIFY_GREEN_PIL)
         else:
-            # Draw triangle
-            triangle = [
-                (icon_x, icon_y),
-                (icon_x, icon_y + icon_size - 1),
-                (icon_x + icon_size - 1, icon_y + icon_size // 2)
-            ]
+            triangle = [(icon_x, icon_y), (icon_x, icon_y + icon_size), (icon_x + icon_size, icon_y + icon_size // 2)]
             draw.polygon(triangle, fill=SPOTIFY_GREEN_PIL)
 
-        # Paste right panel
         composite.paste(right_panel, (32, 0))
-
-        # Convert composite to RGB, draw it on the offscreen canvas
         offscreen_canvas.SetImage(composite.convert('RGB'))
 
-        # Render text with rgbmatrix.graphics (on the same offscreen canvas)
-        text_area_x = 32
-        margin = 1
-        text_area_width = 32 - margin * 2
-
+        # Scroll logic
         current_title = song_data.get("title", "Unknown Title")
-        current_artist = song_data.get("artist", "Unknown Artist")
-
         title_width = measure_text(font_title, current_title)
-        artist_width = measure_text(font_artist, current_artist)
         title_baseline = 12
-        artist_baseline = 24
 
-        # Scroll or center the title
-        if title_width > text_area_width:
-            text_x_title = text_area_x + margin - scroll_offset_title
-            scroll_offset_title = (scroll_offset_title + scroll_speed) % (title_width + 10)
+        if title_width > text_region_width:
+            text_x_title = 64 - scroll_offset_title
+            scroll_offset_title += scroll_speed
+            if text_x_title + title_width < text_area_left:
+                scroll_offset_title = 0
         else:
-            text_x_title = text_area_x + (text_area_width - title_width) // 2
+            text_x_title = text_area_left + (text_region_width - title_width) // 2
 
-        # Scroll or center the artist
-        if artist_width > text_area_width:
-            text_x_artist = text_area_x + margin - scroll_offset_artist
-            scroll_offset_artist = (scroll_offset_artist + scroll_speed) % (artist_width + 10)
-        else:
-            text_x_artist = text_area_x + (text_area_width - artist_width) // 2
+        graphics.DrawText(offscreen_canvas, font_title, text_x_title, title_baseline, WHITE, current_title)
 
-        graphics.DrawText(
-            offscreen_canvas, font_title,
-            text_x_title, title_baseline,
-            WHITE, current_title
-        )
-        graphics.DrawText(
-            offscreen_canvas, font_artist,
-            text_x_artist, artist_baseline,
-            GREY, current_artist
-        )
-
-        # Swap buffers to display
+        # Display everything
         offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
         time.sleep(0.05)
 
