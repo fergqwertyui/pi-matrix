@@ -53,9 +53,16 @@ if len(sys.argv) > 2:
     prevAlbumArtURL = ""
     album_image = None
 
-    # Load a small font (adjust or use a TTF font if needed)
-    title_font = ImageFont.load_default(size=7)
-    artist_font = ImageFont.load_default(size=6)
+    from PIL import ImageFont
+
+    # Choose a pixel font that works well on LED matrices
+    font_path = "/usr/share/fonts/misc/tom-thumb.pcf.gz"  # Adjust the path if needed
+    title_font_size = 8  # Small but clear for an LED matrix
+    artist_font_size = 7  # Slightly smaller for artist names
+
+    # Load the font
+    title_font = ImageFont.truetype(font_path, size=7)  # Load bitmap/pixel font
+    artist_font = ImageFont.truetype(font_path, size=6)
 
     # Define colors
     SPOTIFY_GREEN = (30, 215, 96)
