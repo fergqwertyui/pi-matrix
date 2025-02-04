@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import time
 import sys
 import logging
@@ -57,7 +59,6 @@ def fetch_song_info(username, token_path, default_image):
                         album_image = fallback
                         image_url = None
         except Exception as e:
-            # In case getSongInfo fails or something else
             print(f"Song info fetch error: {e}")
         time.sleep(2)  # Adjust as desired
 
@@ -70,9 +71,12 @@ if len(sys.argv) > 2:
     filename = os.path.join(dir_path, '../config/rgb_options.ini')
 
     # Configure logger
-    logging.basicConfig(format='%(asctime)s %(message)s',
-                        datefmt='%m/%d/%Y %I:%M:%S %p',
-                        filename='spotipy.log', level=logging.INFO)
+    logging.basicConfig(
+        format='%(asctime)s %(message)s',
+        datefmt='%m/%d/%Y %I:%M:%S %p',
+        filename='spotipy.log', 
+        level=logging.INFO
+    )
     logger = logging.getLogger('spotipy_logger')
 
     # Automatically deletes logs more than 2000 bytes
@@ -92,15 +96,17 @@ if len(sys.argv) > 2:
     options.brightness = int(config['DEFAULT']['brightness'])
 
     default_image = os.path.join(dir_path, config['DEFAULT']['default_image'])
-
     matrix = RGBMatrix(options=options)
 
-    # Fonts: Title slightly larger, artist smaller
+    # Load fonts via rgbmatrix.graphics.Font()
+    # IMPORTANT: These must be .bdf, .fnt, or similar bitmap font formats
     font_title = graphics.Font()
-    font_title.LoadFont("../fonts/7x13.bdf")
+    # Replace this path with the BDF version of your tom-thumb font
+    font_title.LoadFont("/usr/share/fonts/misc/tom-thumb.bdf")
 
     font_artist = graphics.Font()
-    font_artist.LoadFont("../fonts/5x8.bdf")  # Ensure you have this smaller font
+    # If you have a smaller BDF version of tom-thumb, point to that
+    font_artist.LoadFont("/usr/share/fonts/misc/tom-thumb.bdf")
 
     # Define colors
     SPOTIFY_GREEN = graphics.Color(30, 215, 96)
