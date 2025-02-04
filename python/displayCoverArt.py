@@ -12,6 +12,8 @@ import os
 import configparser
 from spotipy.oauth2 import SpotifyOAuth
 
+os.sched_setaffinity(0, {3})  # Restrict execution to CPU core 3
+
 if len(sys.argv) > 2:
     username = sys.argv[1]
     token_path = sys.argv[2]
