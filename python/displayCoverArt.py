@@ -1,4 +1,3 @@
-# Entire modified file
 import time
 import sys
 import logging
@@ -6,11 +5,10 @@ from logging.handlers import RotatingFileHandler
 from getSongInfo import getSongInfo
 import requests
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
-from rgbmatrix import RGBMatrix, RGBMatrixOptions
+from PIL import Image
+from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 import os
 import configparser
-from spotipy.oauth2 import SpotifyOAuth
 
 os.sched_setaffinity(0, {3})  # Restrict execution to CPU core 3
 
@@ -53,32 +51,27 @@ if len(sys.argv) > 2:
     prevAlbumArtURL = ""
     album_image = None
 
-    from PIL import ImageFont
-
-    # Choose a pixel font that works well on LED matrices
-    font_path = "/usr/share/fonts/misc/tom-thumb.pcf.gz"  # Adjust the path if needed
-    title_font_size = 8  # Small but clear for an LED matrix
-    artist_font_size = 7  # Slightly smaller for artist names
-
-    # Load the font
-    title_font = ImageFont.truetype(font_path, size=7)  # Load bitmap/pixel font
-    artist_font = ImageFont.truetype(font_path, size=6)
+    # Load RGBMatrix font
+    font = graphics.Font()
+    font.LoadFont("../fonts/7x13.bdf")  # Ensure path is correct
 
     # Define colors
-    SPOTIFY_GREEN = (30, 215, 96)
-    WHITE = (255, 255, 255)
-    GREY = (128, 128, 128)
-    BLACK = (0, 0, 0)
+    SPOTIFY_GREEN = graphics.Color(30, 215, 96)
+    WHITE = graphics.Color(255, 255, 255)
+    GREY = graphics.Color(128, 128, 128)
 
     # Scrolling configuration – separate offsets for title and artist
-    scroll_speed = 10  # pixels per frame
-    scroll_offset_title = 0
-    scroll_offset_artist = 0
+    scroll_speed = 1  # pixels per frame
+    scroll_offset_title = 64  # Start outside screen
+    scroll_offset_artist = 64  # Start outside screen
 
     try:
+        frame = 0
         while True:
-            # Assume getSongInfo returns a dictionary with song details and an image URL
-            song_data, imageURL = getSongInfo(username, token_path)
+            # Fetch song info every 10 frames to optimize API calls
+            if frame % 10 == 0:
+                song_data, imageURL = getSongInfo(username, token_path)
+
             title = song_data.get("title", "Unknown Title")
             artist = song_data.get("artist", "Unknown Artist")
             progress_ms = song_data.get("progress_ms", 0)
@@ -96,101 +89,47 @@ if len(sys.argv) > 2:
                     album_image = Image.open(default_image).convert('RGB')
                     album_image.thumbnail((32, 32), Image.Resampling.LANCZOS)
 
-            # Create composite image (64x32): left half for album art, right half for info
+            # Create composite image (64x32)
             composite = Image.new('RGB', (64, 32))
             if album_image:
                 composite.paste(album_image, (0, 0))
-            else:
-                composite.paste(Image.new('RGB', (32, 32), BLACK), (0, 0))
 
-            # Build the right 32x32 info panel with 1px padding all around
-            right_panel = Image.new('RGB', (32, 32), BLACK)
-            draw = ImageDraw.Draw(right_panel)
-            padding = 1  # 1px border
-            inner_width = 32 - 2 * padding   # 30px drawing width
-            inner_height = 32 - 2 * padding  # 30px drawing height
-            inner_x_start = padding
-            inner_y_start = padding
-
-            # Layout:
-            # • Title at the top (y = inner_y_start)
-            # • Artist immediately below title
-            # • Progress bar (2px thick) placed near the bottom
-            # • Play/Pause icon (old style) below the progress bar
-
-            # --- Title & Artist Positions ---
-            # Measure title height
-            title_width, title_height = draw.textsize(title, font=title_font)
-            title_y = inner_y_start  # e.g. y = 1
-            # Place artist one pixel below the title line
-            artist_y = title_y + title_height
-
-            # --- Scrolling Song Title ---
-            if title_width > inner_width:
-                max_offset_title = title_width - inner_width
-                scroll_offset_title = (scroll_offset_title + scroll_speed) % (max_offset_title + 10)
-                # Only scroll up to max_offset_title before pausing briefly
-                offset_title = scroll_offset_title if scroll_offset_title <= max_offset_title else max_offset_title
-                draw.text((inner_x_start - offset_title, title_y), title, font=title_font, fill=WHITE)
-            else:
-                centered_x = (inner_width - title_width) // 2
-                draw.text((inner_x_start + centered_x, title_y), title, font=title_font, fill=WHITE)
-
-            # --- Scrolling Artist Name ---
-            artist_width, artist_height = draw.textsize(artist, font=artist_font)
-            if artist_width > inner_width:
-                max_offset_artist = artist_width - inner_width
-                scroll_offset_artist = (scroll_offset_artist + scroll_speed) % (max_offset_artist + 10)
-                offset_artist = scroll_offset_artist if scroll_offset_artist <= max_offset_artist else max_offset_artist
-                draw.text((inner_x_start - offset_artist, artist_y), artist, font=artist_font, fill=GREY)
-            else:
-                centered_x = (inner_width - artist_width) // 2
-                draw.text((inner_x_start + centered_x, artist_y), artist, font=artist_font, fill=GREY)
-
-            # --- Progress Bar (2px thick) ---
-            # Position progress bar above the icon at the bottom of the inner area
-            icon_size = 6  # icon height in pixels
-            progress_bar_height = 2
-            # Calculate progress bar Y so that the icon (with a 1px gap) fits at the very bottom
-            progress_bar_y = inner_y_start + inner_height - (icon_size + progress_bar_height)
-            progress_ratio = min(max(progress_ms / duration_ms, 0), 1)
-            filled_width = int(progress_ratio * inner_width)
-            # Draw filled portion (white)
-            draw.rectangle([inner_x_start, progress_bar_y,
-                            inner_x_start + filled_width - 1, progress_bar_y + progress_bar_height - 1],
-                           fill=WHITE)
-            # Draw unfilled portion (grey)
-            draw.rectangle([inner_x_start + filled_width, progress_bar_y,
-                            inner_x_start + inner_width - 1, progress_bar_y + progress_bar_height - 1],
-                           fill=GREY)
-
-            # --- Play/Pause Icon (Old pause icon style) ---
-            icon_y = progress_bar_y + progress_bar_height + 1  # position icon below progress bar
-            icon_x = inner_x_start + (inner_width - icon_size) // 2
-            if is_playing:
-                # Draw pause icon: two vertical bars with bar_width 2 and gap 2
-                bar_width = 2
-                gap = 2
-                draw.rectangle([icon_x, icon_y,
-                                icon_x + bar_width - 1, icon_y + icon_size - 1],
-                               fill=SPOTIFY_GREEN)
-                draw.rectangle([icon_x + bar_width + gap, icon_y,
-                                icon_x + bar_width + gap + bar_width - 1, icon_y + icon_size - 1],
-                               fill=SPOTIFY_GREEN)
-            else:
-                # Draw play icon: right-pointing triangle
-                triangle = [(icon_x, icon_y),
-                            (icon_x, icon_y + icon_size - 1),
-                            (icon_x + icon_size - 1, icon_y + icon_size // 2)]
-                draw.polygon(triangle, fill=SPOTIFY_GREEN)
-
-            # Paste the right panel into the composite image
-            composite.paste(right_panel, (32, 0))
-
-            # Update the RGB matrix display
+            # Convert image to matrix format
             matrix.SetImage(composite.convert('RGB'))
 
-            time.sleep(0.1)
+            # Get canvas for text rendering
+            canvas = matrix.CreateFrameCanvas()
+            canvas.Clear()
+
+            # --- Scrolling Title ---
+            title_len = graphics.DrawText(canvas, font, scroll_offset_title, 10, WHITE, title)
+            scroll_offset_title -= scroll_speed
+            if scroll_offset_title + title_len < 0:  # Reset when fully scrolled
+                scroll_offset_title = canvas.width
+
+            # --- Scrolling Artist ---
+            artist_len = graphics.DrawText(canvas, font, scroll_offset_artist, 20, GREY, artist)
+            scroll_offset_artist -= scroll_speed
+            if scroll_offset_artist + artist_len < 0:  # Reset when fully scrolled
+                scroll_offset_artist = canvas.width
+
+            # --- Progress Bar (2px thick) ---
+            bar_width = int((progress_ms / duration_ms) * 32)  # Scale to 32px width
+            graphics.DrawLine(canvas, 32, 28, 32 + bar_width, 28, WHITE)  # Progress line
+
+            # --- Play/Pause Icon ---
+            if is_playing:
+                # Draw pause icon: two vertical bars
+                graphics.DrawLine(canvas, 58, 24, 58, 30, SPOTIFY_GREEN)
+                graphics.DrawLine(canvas, 60, 24, 60, 30, SPOTIFY_GREEN)
+            else:
+                # Draw play icon: right-pointing triangle
+                graphics.DrawTriangle(canvas, 58, 24, 58, 30, 62, 27, SPOTIFY_GREEN)
+
+            # Refresh matrix display
+            canvas = matrix.SwapOnVSync(canvas)
+            frame += 1
+            time.sleep(0.05)  # Control scrolling speed
 
     except KeyboardInterrupt:
         sys.exit(0)
