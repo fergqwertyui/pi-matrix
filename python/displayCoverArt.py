@@ -54,7 +54,8 @@ if len(sys.argv) > 2:
     album_image = None
 
     # Load a small font (adjust or use a TTF font if needed)
-    font = ImageFont.load_default()
+    title_font = ImageFont.load_default(size=7)
+    artist_font = ImageFont.load_default(size=6)
 
     # Define colors
     SPOTIFY_GREEN = (30, 215, 96)
@@ -63,7 +64,7 @@ if len(sys.argv) > 2:
     BLACK = (0, 0, 0)
 
     # Scrolling configuration – separate offsets for title and artist
-    scroll_speed = 1  # pixels per frame
+    scroll_speed = 10  # pixels per frame
     scroll_offset_title = 0
     scroll_offset_artist = 0
 
@@ -112,10 +113,10 @@ if len(sys.argv) > 2:
 
             # --- Title & Artist Positions ---
             # Measure title height
-            title_width, title_height = draw.textsize(title, font=font)
+            title_width, title_height = draw.textsize(title, font=title_font)
             title_y = inner_y_start  # e.g. y = 1
             # Place artist one pixel below the title line
-            artist_y = title_y + title_height + 1
+            artist_y = title_y + title_height
 
             # --- Scrolling Song Title ---
             if title_width > inner_width:
@@ -123,28 +124,28 @@ if len(sys.argv) > 2:
                 scroll_offset_title = (scroll_offset_title + scroll_speed) % (max_offset_title + 10)
                 # Only scroll up to max_offset_title before pausing briefly
                 offset_title = scroll_offset_title if scroll_offset_title <= max_offset_title else max_offset_title
-                draw.text((inner_x_start - offset_title, title_y), title, font=font, fill=WHITE)
+                draw.text((inner_x_start - offset_title, title_y), title, font=title_font, fill=WHITE)
             else:
                 centered_x = (inner_width - title_width) // 2
-                draw.text((inner_x_start + centered_x, title_y), title, font=font, fill=WHITE)
+                draw.text((inner_x_start + centered_x, title_y), title, font=title_font, fill=WHITE)
 
             # --- Scrolling Artist Name ---
-            artist_width, artist_height = draw.textsize(artist, font=font)
+            artist_width, artist_height = draw.textsize(artist, font=artist_font)
             if artist_width > inner_width:
                 max_offset_artist = artist_width - inner_width
                 scroll_offset_artist = (scroll_offset_artist + scroll_speed) % (max_offset_artist + 10)
                 offset_artist = scroll_offset_artist if scroll_offset_artist <= max_offset_artist else max_offset_artist
-                draw.text((inner_x_start - offset_artist, artist_y), artist, font=font, fill=GREY)
+                draw.text((inner_x_start - offset_artist, artist_y), artist, font=artist_font, fill=GREY)
             else:
                 centered_x = (inner_width - artist_width) // 2
-                draw.text((inner_x_start + centered_x, artist_y), artist, font=font, fill=GREY)
+                draw.text((inner_x_start + centered_x, artist_y), artist, font=artist_font, fill=GREY)
 
             # --- Progress Bar (2px thick) ---
             # Position progress bar above the icon at the bottom of the inner area
             icon_size = 6  # icon height in pixels
             progress_bar_height = 2
             # Calculate progress bar Y so that the icon (with a 1px gap) fits at the very bottom
-            progress_bar_y = inner_y_start + inner_height - (icon_size + progress_bar_height + 1)
+            progress_bar_y = inner_y_start + inner_height - (icon_size + progress_bar_height)
             progress_ratio = min(max(progress_ms / duration_ms, 0), 1)
             filled_width = int(progress_ratio * inner_width)
             # Draw filled portion (white)
