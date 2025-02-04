@@ -8,7 +8,7 @@ from logging.handlers import RotatingFileHandler
 from getSongInfo import getSongInfo
 import requests
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 import os
 import configparser
@@ -37,14 +37,10 @@ def fetch_song_info(username, token_path, default_image):
     while True:
         try:
             data = getSongInfo(username, token_path)
-            # data is either (song_data_dict, imageURL) or None
             if data:
                 new_song_data, new_url = data
-
-                # Update the global song info
                 song_data = new_song_data
                 if new_url != prev_url:
-                    # Fetch album art here so main loop doesn't block on image request
                     try:
                         response = requests.get(new_url, timeout=2)
                         new_album = Image.open(BytesIO(response.content)).convert('RGB')
@@ -53,14 +49,13 @@ def fetch_song_info(username, token_path, default_image):
                         prev_url = new_url
                         image_url = new_url
                     except Exception:
-                        # If download fails, use default
                         fallback = Image.open(default_image).convert('RGB')
                         fallback.thumbnail((32, 32), Image.Resampling.LANCZOS)
                         album_image = fallback
                         image_url = None
         except Exception as e:
             print(f"Song info fetch error: {e}")
-        time.sleep(2)  # Adjust as desired
+        time.sleep(2)
 
 if len(sys.argv) > 2:
     username = sys.argv[1]
@@ -79,7 +74,6 @@ if len(sys.argv) > 2:
     )
     logger = logging.getLogger('spotipy_logger')
 
-    # Automatically deletes logs more than 2000 bytes
     handler = RotatingFileHandler('spotipy.log', maxBytes=2000, backupCount=3)
     logger.addHandler(handler)
 
@@ -98,6 +92,7 @@ if len(sys.argv) > 2:
     default_image = os.path.join(dir_path, config['DEFAULT']['default_image'])
     matrix = RGBMatrix(options=options)
 
+    # Load font using rgbmatrix graphics
     font_title = graphics.Font()
     font_title.LoadFont("fonts/7x13.bdf")
     font_artist = font_title
@@ -110,10 +105,9 @@ if len(sys.argv) > 2:
 
     # Scrolling offsets
     scroll_speed = 1
-    scroll_offset_title = 64  # Start off-screen to the right
+    scroll_offset_title = 64
     scroll_offset_artist = 64
 
-    # Start background thread for fetching song info
     fetch_thread = threading.Thread(
         target=fetch_song_info,
         args=(username, token_path, default_image),
@@ -121,116 +115,86 @@ if len(sys.argv) > 2:
     )
     fetch_thread.start()
 
-    try:
-        # The main loop handles scrolling and updating the display
-        while True:
-            # Create a new canvas for each frame
-            canvas = matrix.CreateFrameCanvas()
-            canvas.Clear()
+    while True:
+        # Create a new offscreen canvas
+        offscreen_canvas = matrix.CreateFrameCanvas()
+        offscreen_canvas.Clear()
 
-            # Draw the album image on the left (0,0)
-            if album_image:
-                matrix.SetImage(album_image, 0, 0)
+        # Build a composite PIL image
+        composite = Image.new('RGB', (64, 32))
+        if album_image:
+            composite.paste(album_image, (0, 0))
+        else:
+            composite.paste(Image.new('RGB', (32, 32), BLACK), (0, 0))
 
-            current_title = song_data.get("title", "Unknown Title")
-            current_artist = song_data.get("artist", "Unknown Artist")
-            progress_ms = song_data.get("progress_ms", 0)
-            duration_ms = song_data.get("duration_ms", 1)  # avoid division by zero
-            is_playing = song_data.get("is_playing", False)
+        # Create the right panel
+        right_panel = Image.new('RGB', (32, 32), BLACK)
+        draw = ImageDraw.Draw(right_panel)
+        padding = 1
+        inner_width = 32 - 2 * padding
+        inner_height = 32 - 2 * padding
+        inner_x_start = padding
+        inner_y_start = padding
 
-            title_width, title_height = draw.textsize(current_title, font=font_title)
-            title_y = inner_y_start  # e.g. y = 1
+        # Progress Bar
+        icon_size = 6
+        progress_bar_height = 2
+        progress_bar_y = inner_y_start + inner_height - (icon_size + progress_bar_height)
+        progress_ratio = min(max(song_data["progress_ms"] / song_data["duration_ms"], 0), 1)
+        filled_width = int(progress_ratio * inner_width)
 
+        draw.rectangle([inner_x_start, progress_bar_y,
+                        inner_x_start + filled_width - 1, progress_bar_y + progress_bar_height - 1], fill=WHITE)
+        draw.rectangle([inner_x_start + filled_width, progress_bar_y,
+                        inner_x_start + inner_width - 1, progress_bar_y + progress_bar_height - 1], fill=GREY)
 
-            # --- Scrolling Song Title ---
-            if title_width > inner_width:
-                max_offset_title = title_width - inner_width
-                scroll_offset_title = (scroll_offset_title + scroll_speed) % (max_offset_title + 10)
-                # Only scroll up to max_offset_title before pausing briefly
-                offset_title = scroll_offset_title if scroll_offset_title <= max_offset_title else max_offset_title
-                draw.text((inner_x_start - offset_title, title_y), current_title, font=font_title, fill=WHITE)
-            else:
-                centered_x = (inner_width - title_width) // 2
-                draw.text((inner_x_start + centered_x, title_y), current_title, font=font_title, fill=WHITE)
+        # Play/Pause Icon
+        icon_y = progress_bar_y + progress_bar_height + 1
+        icon_x = inner_x_start + (inner_width - icon_size) // 2
+        if song_data["is_playing"]:
+            bar_width = 2
+            gap = 2
+            draw.rectangle([icon_x, icon_y,
+                            icon_x + bar_width - 1, icon_y + icon_size - 1], fill=SPOTIFY_GREEN)
+            draw.rectangle([icon_x + bar_width + gap, icon_y,
+                            icon_x + bar_width + gap + bar_width - 1, icon_y + icon_size - 1], fill=SPOTIFY_GREEN)
+        else:
+            triangle = [(icon_x, icon_y),
+                        (icon_x, icon_y + icon_size - 1),
+                        (icon_x + icon_size - 1, icon_y + icon_size // 2)]
+            draw.polygon(triangle, fill=SPOTIFY_GREEN)
 
+        composite.paste(right_panel, (32, 0))
+        offscreen_canvas.SetImage(composite.convert('RGB'))
 
-            # --- Scrolling Artist Name ---
-            artist_width, artist_height = draw.textsize(current_artist, font=font_artist)
-            artist_y = title_y + title_height
+        # Render text with rgbmatrix.graphics
+        text_area_x = 32
+        margin = 1
+        text_area_width = 32 - margin * 2
 
-            if artist_width > inner_width:
-                max_offset_artist = artist_width - inner_width
-                scroll_offset_artist = (scroll_offset_artist + scroll_speed) % (max_offset_artist + 10)
-                offset_artist = scroll_offset_artist if scroll_offset_artist <= max_offset_artist else max_offset_artist
-                draw.text((inner_x_start - offset_artist, artist_y), current_artist, font=font_artist, fill=GREY)
-            else:
-                centered_x = (inner_width - artist_width) // 2
-                draw.text((inner_x_start + centered_x, artist_y), current_artist, font=font_artist, fill=GREY)
+        title_width = graphics.MeasureText(font_title, song_data["title"])
+        artist_width = graphics.MeasureText(font_artist, song_data["artist"])
+        title_baseline = 12
+        artist_baseline = 24
 
-            # Create composite image (64x32): left half for album art, right half for info
-            composite = Image.new('RGB', (64, 32))
-            if album_image:
-                composite.paste(album_image, (0, 0))
-            else:
-                composite.paste(Image.new('RGB', (32, 32), BLACK), (0, 0))
+        if title_width > text_area_width:
+            text_x_title = text_area_x + margin - scroll_offset_title
+            scroll_offset_title = (scroll_offset_title + scroll_speed) % (title_width + 10)
+        else:
+            text_x_title = text_area_x + (text_area_width - title_width) // 2
 
-            # Build the right 32x32 info panel with 1px padding all around
-            right_panel = Image.new('RGB', (32, 32), BLACK)
-            draw = ImageDraw.Draw(right_panel)
-            padding = 1  # 1px border
-            inner_width = 32 - 2 * padding   # 30px drawing width
-            inner_height = 32 - 2 * padding  # 30px drawing height
-            inner_x_start = padding
-            inner_y_start = padding
+        if artist_width > text_area_width:
+            text_x_artist = text_area_x + margin - scroll_offset_artist
+            scroll_offset_artist = (scroll_offset_artist + scroll_speed) % (artist_width + 10)
+        else:
+            text_x_artist = text_area_x + (text_area_width - artist_width) // 2
 
-            # --- Progress Bar (2px thick) ---
-            # Position progress bar above the icon at the bottom of the inner area
-            icon_size = 6  # icon height in pixels
-            progress_bar_height = 2
-            # Calculate progress bar Y so that the icon (with a 1px gap) fits at the very bottom
-            progress_bar_y = inner_y_start + inner_height - (icon_size + progress_bar_height)
-            progress_ratio = min(max(progress_ms / duration_ms, 0), 1)
-            filled_width = int(progress_ratio * inner_width)
-            # Draw filled portion (white)
-            draw.rectangle([inner_x_start, progress_bar_y,
-                            inner_x_start + filled_width - 1, progress_bar_y + progress_bar_height - 1],
-                           fill=WHITE)
-            # Draw unfilled portion (grey)
-            draw.rectangle([inner_x_start + filled_width, progress_bar_y,
-                            inner_x_start + inner_width - 1, progress_bar_y + progress_bar_height - 1],
-                           fill=GREY)
+        graphics.DrawText(offscreen_canvas, font_title, text_x_title, title_baseline, WHITE, song_data["title"])
+        graphics.DrawText(offscreen_canvas, font_artist, text_x_artist, artist_baseline, GREY, song_data["artist"])
 
-            # --- PLAY/PAUSE ICON ---
-            icon_y = progress_bar_y + progress_bar_height + 1  # position icon below progress bar
-            icon_x = inner_x_start + (inner_width - icon_size) // 2
-            if is_playing:
-                # Draw pause icon: two vertical bars with bar_width 2 and gap 2
-                bar_width = 2
-                gap = 2
-                draw.rectangle([icon_x, icon_y,
-                                icon_x + bar_width - 1, icon_y + icon_size - 1],
-                               fill=SPOTIFY_GREEN)
-                draw.rectangle([icon_x + bar_width + gap, icon_y,
-                                icon_x + bar_width + gap + bar_width - 1, icon_y + icon_size - 1],
-                               fill=SPOTIFY_GREEN)
-            else:
-                # Draw play icon: right-pointing triangle
-                triangle = [(icon_x, icon_y),
-                            (icon_x, icon_y + icon_size - 1),
-                            (icon_x + icon_size - 1, icon_y + icon_size // 2)]
-                draw.polygon(triangle, fill=SPOTIFY_GREEN)
-
-            # Paste the right panel into the composite image
-            composite.paste(right_panel, (32, 0))
-
-            # Update the RGB matrix display
-            matrix.SetImage(composite.convert('RGB'))
-
-            # Slight delay for smooth scrolling
-            time.sleep(0.05)
-
-    except KeyboardInterrupt:
-        sys.exit(0)
+        # Display everything
+        offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
+        time.sleep(0.05)
 
 else:
     print("Usage: %s username token_path" % sys.argv[0])
