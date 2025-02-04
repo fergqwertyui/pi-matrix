@@ -125,10 +125,10 @@ if len(sys.argv) > 2:
         if album_image:
             composite.paste(album_image, (0, 0))
         else:
-            composite.paste(Image.new('RGB', (32, 32), BLACK), (0, 0))
+            composite.paste(Image.new('RGB', (32, 32), (0, 0, 0)), (0, 0))
 
         # Create the right panel
-        right_panel = Image.new('RGB', (32, 32), BLACK)
+        right_panel = Image.new('RGB', (32, 32), (0, 0, 0))
         draw = ImageDraw.Draw(right_panel)
         padding = 1
         inner_width = 32 - 2 * padding
