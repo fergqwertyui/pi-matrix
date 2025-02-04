@@ -27,6 +27,13 @@ song_data = {
 image_url = None
 album_image = None
 
+def measure_text(font, text):
+    width = 0
+    for c in text:
+        width += font.CharacterWidth(ord(c))
+    return width
+
+
 def fetch_song_info(username, token_path, default_image):
     """
     Thread target: updates song info and album art URL in global variables 
@@ -208,8 +215,8 @@ if len(sys.argv) > 2:
         current_title = song_data.get("title", "Unknown Title")
         current_artist = song_data.get("artist", "Unknown Artist")
 
-        title_width = graphics.MeasureText(font_title, current_title)
-        artist_width = graphics.MeasureText(font_artist, current_artist)
+        title_width = measure_text(font_title, current_title)
+        artist_width = measure_text(font_artist, current_artist)
         title_baseline = 12
         artist_baseline = 24
 
