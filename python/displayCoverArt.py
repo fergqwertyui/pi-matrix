@@ -8,7 +8,7 @@ from logging.handlers import RotatingFileHandler
 from getSongInfo import getSongInfo
 import requests
 from io import BytesIO
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 import os
 import configparser
@@ -26,6 +26,8 @@ song_data = {
 }
 image_url = None
 album_image = None
+scroll_offset_title = 0  # used for scrolling text
+scroll_speed = 1
 
 def fetch_song_info(username, token_path, default_image):
     """
@@ -98,31 +100,24 @@ if len(sys.argv) > 2:
     SPOTIFY_GREEN = graphics.Color(30, 215, 96)
     BLACK = graphics.Color(0, 0, 0)
 
-    # Define PIL colors for progress bar
+    # Define PIL colors for drawing
     WHITE_PIL = (255, 255, 255)
     GREY_PIL = (128, 128, 128)
     SPOTIFY_GREEN_PIL = (30, 215, 96)
     BLACK_PIL = (0, 0, 0)
 
-    # Load font using rgbmatrix graphics
+    # Load font for the LED matrix (if needed elsewhere)
     font_title = graphics.Font()
     font_title.LoadFont("fonts/7x13.bdf")
     font_artist = font_title
 
-    # Helper function to measure text width in pixels
-    def measure_text(font, text):
-        width = 0
-        for c in text:
-            width += font.CharacterWidth(ord(c))
-        return width
+    # Load a PIL font to draw text within a confined image.
+    # (Assumes your BDF font can be loaded by PIL; if not, replace with an appropriate TTF font.)
+    pil_font_title = ImageFont.load("fonts/7x13.bdf")
 
-    # Scroll variables
+    # Define right-panel parameters: the album art occupies x=0–31 so the text area is 32×32 (x=32–63)
     text_area_left = 32
-    text_area_right = 63
-    text_region_width = text_area_right - text_area_left + 1
-    scroll_speed = 1
-    scroll_offset_title = 0
-    scroll_offset_artist = 0
+    text_area_width = 32
 
     # Start background thread to fetch song info
     fetch_thread = threading.Thread(
@@ -133,20 +128,20 @@ if len(sys.argv) > 2:
     fetch_thread.start()
 
     while True:
-        # Create a new offscreen canvas
+        # Create a new offscreen canvas and clear it
         offscreen_canvas = matrix.CreateFrameCanvas()
         offscreen_canvas.Clear()
 
-        # Create composite PIL image (64x32)
+        # Create composite PIL image (64×32)
         composite = Image.new('RGB', (64, 32))
 
-        # Left side: album art or fallback
+        # Left side: album art (or fallback)
         if album_image:
             composite.paste(album_image, (0, 0))
         else:
             composite.paste(Image.new('RGB', (32, 32), BLACK_PIL), (0, 0))
 
-        # Right side panel (progress bar and play/pause icon)
+        # Right side panel: build an image for progress bar, icons, and text
         right_panel = Image.new('RGB', (32, 32), BLACK_PIL)
         draw = ImageDraw.Draw(right_panel)
         padding = 1
@@ -155,17 +150,18 @@ if len(sys.argv) > 2:
         inner_x_start = padding
         inner_y_start = padding
 
-        # Progress bar
+        # Draw progress bar on the right panel
         icon_size = 6
         progress_bar_height = 2
         progress_bar_y = inner_y_start + inner_height - (icon_size + progress_bar_height)
         progress_ratio = 0 if song_data["duration_ms"] == 0 else min(max(song_data["progress_ms"] / song_data["duration_ms"], 0), 1)
         filled_width = int(progress_ratio * inner_width)
+        draw.rectangle([inner_x_start, progress_bar_y,
+                        inner_x_start + filled_width, progress_bar_y + progress_bar_height], fill=WHITE_PIL)
+        draw.rectangle([inner_x_start + filled_width, progress_bar_y,
+                        inner_x_start + inner_width, progress_bar_y + progress_bar_height], fill=GREY_PIL)
 
-        draw.rectangle([inner_x_start, progress_bar_y, inner_x_start + filled_width, progress_bar_y + progress_bar_height], fill=WHITE_PIL)
-        draw.rectangle([inner_x_start + filled_width, progress_bar_y, inner_x_start + inner_width, progress_bar_y + progress_bar_height], fill=GREY_PIL)
-
-        # Play/Pause Icon
+        # Draw play/pause icon on the right panel
         icon_y = progress_bar_y + progress_bar_height + 1
         icon_x = inner_x_start + (inner_width - icon_size) // 2
         if song_data["is_playing"]:
@@ -175,25 +171,36 @@ if len(sys.argv) > 2:
             triangle = [(icon_x, icon_y), (icon_x, icon_y + icon_size), (icon_x + icon_size, icon_y + icon_size // 2)]
             draw.polygon(triangle, fill=SPOTIFY_GREEN_PIL)
 
-        composite.paste(right_panel, (32, 0))
-        offscreen_canvas.SetImage(composite.convert('RGB'))
-
-        # Scroll logic
+        # Create a separate image for the text area (32×32) to ensure the text stays in the right panel.
+        text_area_img = Image.new('RGB', (32, 32), BLACK_PIL)
+        text_draw = ImageDraw.Draw(text_area_img)
         current_title = song_data.get("title", "Unknown Title")
-        title_width = measure_text(font_title, current_title)
-        title_baseline = 12
+        text_width, text_height = pil_font_title.getsize(current_title)
+        text_y = 12  # vertical position (similar to the original baseline)
 
-        if title_width > text_region_width:
-            text_x_title = 64 - scroll_offset_title
-            scroll_offset_title += scroll_speed
-            if text_x_title + title_width < text_area_left:
-                scroll_offset_title = 0
+        if text_width <= text_area_img.width:
+            # Center the text if it fits within 32 pixels
+            text_x = (text_area_img.width - text_width) // 2
+            text_draw.text((text_x, text_y), current_title, font=pil_font_title, fill=(255, 255, 255))
         else:
-            text_x_title = text_area_left + (text_region_width - title_width) // 2
+            # Scrolling marquee effect confined to the 32×32 text area
+            gap = 5  # pixel gap between repetitions
+            effective_offset = scroll_offset_title % (text_width + gap)
+            text_x = -effective_offset
+            text_draw.text((text_x, text_y), current_title, font=pil_font_title, fill=(255, 255, 255))
+            # Draw a second copy if needed for seamless scrolling
+            if text_x + text_width < text_area_img.width:
+                text_draw.text((text_x + text_width + gap, text_y), current_title, font=pil_font_title, fill=(255, 255, 255))
+            scroll_offset_title += scroll_speed
 
-        graphics.DrawText(offscreen_canvas, font_title, text_x_title, title_baseline, WHITE, current_title)
+        # Paste the text area into the right panel (it will only affect the 32×32 region)
+        right_panel.paste(text_area_img, (0, 0))
 
-        # Display everything
+        # Paste the right panel into the composite image at x=32
+        composite.paste(right_panel, (32, 0))
+
+        # Update the LED matrix with the composite image
+        offscreen_canvas.SetImage(composite.convert('RGB'))
         offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
         time.sleep(0.05)
 
