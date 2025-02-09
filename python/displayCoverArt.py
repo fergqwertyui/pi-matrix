@@ -13,7 +13,7 @@ from rgbmatrix import RGBMatrix, RGBMatrixOptions, graphics
 import os
 import configparser
 
-# Restrict execution to CPU core 3
+# Restrict execution of the main thread to CPU core 3
 os.sched_setaffinity(0, {3})
 
 # Global shared data for threading
@@ -36,6 +36,11 @@ def fetch_song_info(username, token_path, default_image):
     every 1 second (at most), without blocking the main loop.
     """
     global song_data, image_url, album_image
+    # Set this thread's affinity to CPU core 2
+    try:
+        os.sched_setaffinity(threading.get_native_id(), {2})
+    except Exception as e:
+        print(f"Could not set thread affinity: {e}")
     prev_url = None
     while True:
         try:
@@ -113,7 +118,6 @@ if len(sys.argv) > 2:
     font_artist = font_title
 
     # Load a PIL font to draw text within our confined image.
-    # Here we use the default PIL font; you can replace this with a truetype font if desired.
     pil_font_title = ImageFont.load_default()
 
     # Start background thread to fetch song info
@@ -150,7 +154,7 @@ if len(sys.argv) > 2:
 
         # Draw progress bar on the right panel (located in the lower part)
         icon_size = 6
-        progress_bar_height = 2
+        progress_bar_height = 1  # 1 pixel thick
         progress_bar_y = inner_y_start + inner_height - (icon_size + progress_bar_height)
         progress_ratio = 0 if song_data["duration_ms"] == 0 else min(max(song_data["progress_ms"] / song_data["duration_ms"], 0), 1)
         filled_width = int(progress_ratio * inner_width)
@@ -160,7 +164,10 @@ if len(sys.argv) > 2:
                         inner_x_start + inner_width, progress_bar_y + progress_bar_height], fill=GREY_PIL)
 
         # Draw play/pause icon on the right panel (just below the progress bar)
-        icon_y = progress_bar_y + progress_bar_height + 1
+        icon_y = progress_bar_y + progress_bar_height
+        # Ensure the icon doesn't go off the bottom of the 32-pixel high panel
+        if icon_y + icon_size > 32:
+            icon_y = 32 - icon_size
         icon_x = inner_x_start + (inner_width - icon_size) // 2
         if song_data["is_playing"]:
             draw.rectangle([icon_x, icon_y, icon_x + 2, icon_y + icon_size], fill=SPOTIFY_GREEN_PIL)
@@ -184,7 +191,7 @@ if len(sys.argv) > 2:
 
         # Layout: title on the first line and artist on the second.
         title_y = 0
-        artist_y = title_height  # immediately below title; adjust if needed
+        artist_y = title_height  # immediately below title
 
         # Draw title with horizontal scrolling if needed:
         if title_width <= 32:
@@ -199,17 +206,17 @@ if len(sys.argv) > 2:
                 text_draw.text((title_x + title_width + gap, title_y), title_text, font=pil_font_title, fill=(255, 255, 255))
             scroll_offset_title += scroll_speed
 
-        # Draw artist with horizontal scrolling if needed:
+        # Draw artist with horizontal scrolling if needed (artist text in grey):
         if artist_width <= 32:
             artist_x = (32 - artist_width) // 2
-            text_draw.text((artist_x, artist_y), artist_text, font=pil_font_title, fill=(255, 255, 255))
+            text_draw.text((artist_x, artist_y), artist_text, font=pil_font_title, fill=GREY_PIL)
         else:
             gap = 5
             effective_offset_artist = scroll_offset_artist % (artist_width + gap)
             artist_x = -effective_offset_artist
-            text_draw.text((artist_x, artist_y), artist_text, font=pil_font_title, fill=(255, 255, 255))
+            text_draw.text((artist_x, artist_y), artist_text, font=pil_font_title, fill=GREY_PIL)
             if artist_x + artist_width < 32:
-                text_draw.text((artist_x + artist_width + gap, artist_y), artist_text, font=pil_font_title, fill=(255, 255, 255))
+                text_draw.text((artist_x + artist_width + gap, artist_y), artist_text, font=pil_font_title, fill=GREY_PIL)
             scroll_offset_artist += scroll_speed
 
         # Paste the text area into the right panel at (0,0) so it doesn't overlap the icons
