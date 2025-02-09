@@ -30,6 +30,9 @@ scroll_offset_title = 0  # used for scrolling title text
 scroll_offset_artist = 0  # used for scrolling artist text
 scroll_speed = 1
 
+# Create a lock to synchronize access to album_image
+album_lock = threading.Lock()
+
 def fetch_song_info(username, token_path, default_image):
     """
     Thread target: updates song info and album art URL in global variables 
@@ -53,13 +56,15 @@ def fetch_song_info(username, token_path, default_image):
                         response = requests.get(new_url, timeout=2)
                         new_album = Image.open(BytesIO(response.content)).convert('RGB')
                         new_album.thumbnail((32, 32), Image.Resampling.LANCZOS)
-                        album_image = new_album
+                        with album_lock:
+                            album_image = new_album
                         prev_url = new_url
                         image_url = new_url
                     except Exception:
                         fallback = Image.open(default_image).convert('RGB')
                         fallback.thumbnail((32, 32), Image.Resampling.LANCZOS)
-                        album_image = fallback
+                        with album_lock:
+                            album_image = fallback
                         image_url = None
         except Exception as e:
             print(f"Song info fetch error: {e}")
@@ -136,9 +141,13 @@ if len(sys.argv) > 2:
         # Create composite PIL image (64×32)
         composite = Image.new('RGB', (64, 32))
 
+        # Safely copy the album image using the lock
+        with album_lock:
+            local_album = album_image.copy() if album_image is not None else None
+
         # Left side: album art (or fallback)
-        if album_image:
-            composite.paste(album_image, (0, 0))
+        if local_album:
+            composite.paste(local_album, (0, 0))
         else:
             composite.paste(Image.new('RGB', (32, 32), BLACK_PIL), (0, 0))
 
@@ -154,7 +163,7 @@ if len(sys.argv) > 2:
 
         # Draw progress bar on the right panel (located in the lower part)
         icon_size = 6
-        progress_bar_y = inner_y_start + inner_height - (icon_size)
+        progress_bar_y = inner_y_start + inner_height - icon_size
         progress_ratio = 0 if song_data["duration_ms"] == 0 else min(max(song_data["progress_ms"] / song_data["duration_ms"], 0), 1)
         filled_width = int(progress_ratio * inner_width)
         draw.rectangle([inner_x_start, progress_bar_y,
