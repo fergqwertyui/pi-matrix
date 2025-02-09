@@ -26,13 +26,14 @@ song_data = {
 }
 image_url = None
 album_image = None
-scroll_offset_title = 0  # used for scrolling text
+scroll_offset_title = 0  # used for scrolling title text
+scroll_offset_artist = 0  # used for scrolling artist text
 scroll_speed = 1
 
 def fetch_song_info(username, token_path, default_image):
     """
     Thread target: updates song info and album art URL in global variables 
-    every 2 seconds, without blocking the main loop (which controls scrolling).
+    every 1 second (at most), without blocking the main loop.
     """
     global song_data, image_url, album_image
     prev_url = None
@@ -57,7 +58,7 @@ def fetch_song_info(username, token_path, default_image):
                         image_url = None
         except Exception as e:
             print(f"Song info fetch error: {e}")
-        time.sleep(2)
+        time.sleep(1)  # fetch at most once per second
 
 if len(sys.argv) > 2:
     username = sys.argv[1]
@@ -94,7 +95,7 @@ if len(sys.argv) > 2:
     default_image = os.path.join(dir_path, config['DEFAULT']['default_image'])
     matrix = RGBMatrix(options=options)
 
-    # Define colors
+    # Define colors for the LED matrix
     WHITE = graphics.Color(255, 255, 255)
     GREY = graphics.Color(128, 128, 128)
     SPOTIFY_GREEN = graphics.Color(30, 215, 96)
@@ -106,18 +107,14 @@ if len(sys.argv) > 2:
     SPOTIFY_GREEN_PIL = (30, 215, 96)
     BLACK_PIL = (0, 0, 0)
 
-    # Load font for the LED matrix (if needed elsewhere)
+    # Load LED matrix font (for graphics.DrawText) as needed
     font_title = graphics.Font()
     font_title.LoadFont("fonts/7x13.bdf")
     font_artist = font_title
 
-    # Load a PIL font to draw text within a confined image.
-    # (Assumes your BDF font can be loaded by PIL; if not, replace with an appropriate TTF font.)
-    pil_font_title = ImageFont.load("fonts/7x13.bdf")
-
-    # Define right-panel parameters: the album art occupies x=0–31 so the text area is 32×32 (x=32–63)
-    text_area_left = 32
-    text_area_width = 32
+    # Load a PIL font to draw text within our confined image.
+    # Here we use the default PIL font; you can replace this with a truetype font if desired.
+    pil_font_title = ImageFont.load_default()
 
     # Start background thread to fetch song info
     fetch_thread = threading.Thread(
@@ -141,7 +138,8 @@ if len(sys.argv) > 2:
         else:
             composite.paste(Image.new('RGB', (32, 32), BLACK_PIL), (0, 0))
 
-        # Right side panel: build an image for progress bar, icons, and text
+        # Right side panel (32×32): first draw the progress bar and play/pause icon,
+        # then overlay the text area (which occupies the upper part).
         right_panel = Image.new('RGB', (32, 32), BLACK_PIL)
         draw = ImageDraw.Draw(right_panel)
         padding = 1
@@ -150,7 +148,7 @@ if len(sys.argv) > 2:
         inner_x_start = padding
         inner_y_start = padding
 
-        # Draw progress bar on the right panel
+        # Draw progress bar on the right panel (located in the lower part)
         icon_size = 6
         progress_bar_height = 2
         progress_bar_y = inner_y_start + inner_height - (icon_size + progress_bar_height)
@@ -161,7 +159,7 @@ if len(sys.argv) > 2:
         draw.rectangle([inner_x_start + filled_width, progress_bar_y,
                         inner_x_start + inner_width, progress_bar_y + progress_bar_height], fill=GREY_PIL)
 
-        # Draw play/pause icon on the right panel
+        # Draw play/pause icon on the right panel (just below the progress bar)
         icon_y = progress_bar_y + progress_bar_height + 1
         icon_x = inner_x_start + (inner_width - icon_size) // 2
         if song_data["is_playing"]:
@@ -171,32 +169,53 @@ if len(sys.argv) > 2:
             triangle = [(icon_x, icon_y), (icon_x, icon_y + icon_size), (icon_x + icon_size, icon_y + icon_size // 2)]
             draw.polygon(triangle, fill=SPOTIFY_GREEN_PIL)
 
-        # Create a separate image for the text area (32×32) to ensure the text stays in the right panel.
-        text_area_img = Image.new('RGB', (32, 32), BLACK_PIL)
+        # Reserve the upper area for text (from y=0 up to progress_bar_y).
+        text_area_height = progress_bar_y  # this area will not cover the icons
+        text_area_img = Image.new('RGB', (32, text_area_height), BLACK_PIL)
         text_draw = ImageDraw.Draw(text_area_img)
-        current_title = song_data.get("title", "Unknown Title")
-        text_width, text_height = pil_font_title.getsize(current_title)
-        text_y = 12  # vertical position (similar to the original baseline)
 
-        if text_width <= text_area_img.width:
-            # Center the text if it fits within 32 pixels
-            text_x = (text_area_img.width - text_width) // 2
-            text_draw.text((text_x, text_y), current_title, font=pil_font_title, fill=(255, 255, 255))
+        # Get title and artist text from song_data
+        title_text = song_data.get("title", "Unknown Title")
+        artist_text = song_data.get("artist", "Unknown Artist")
+
+        # Measure text sizes
+        title_width, title_height = pil_font_title.getsize(title_text)
+        artist_width, artist_height = pil_font_title.getsize(artist_text)
+
+        # Layout: title on the first line and artist on the second.
+        title_y = 0
+        artist_y = title_height  # immediately below title; adjust if needed
+
+        # Draw title with horizontal scrolling if needed:
+        if title_width <= 32:
+            title_x = (32 - title_width) // 2
+            text_draw.text((title_x, title_y), title_text, font=pil_font_title, fill=(255, 255, 255))
         else:
-            # Scrolling marquee effect confined to the 32×32 text area
-            gap = 5  # pixel gap between repetitions
-            effective_offset = scroll_offset_title % (text_width + gap)
-            text_x = -effective_offset
-            text_draw.text((text_x, text_y), current_title, font=pil_font_title, fill=(255, 255, 255))
-            # Draw a second copy if needed for seamless scrolling
-            if text_x + text_width < text_area_img.width:
-                text_draw.text((text_x + text_width + gap, text_y), current_title, font=pil_font_title, fill=(255, 255, 255))
+            gap = 5
+            effective_offset_title = scroll_offset_title % (title_width + gap)
+            title_x = -effective_offset_title
+            text_draw.text((title_x, title_y), title_text, font=pil_font_title, fill=(255, 255, 255))
+            if title_x + title_width < 32:
+                text_draw.text((title_x + title_width + gap, title_y), title_text, font=pil_font_title, fill=(255, 255, 255))
             scroll_offset_title += scroll_speed
 
-        # Paste the text area into the right panel (it will only affect the 32×32 region)
+        # Draw artist with horizontal scrolling if needed:
+        if artist_width <= 32:
+            artist_x = (32 - artist_width) // 2
+            text_draw.text((artist_x, artist_y), artist_text, font=pil_font_title, fill=(255, 255, 255))
+        else:
+            gap = 5
+            effective_offset_artist = scroll_offset_artist % (artist_width + gap)
+            artist_x = -effective_offset_artist
+            text_draw.text((artist_x, artist_y), artist_text, font=pil_font_title, fill=(255, 255, 255))
+            if artist_x + artist_width < 32:
+                text_draw.text((artist_x + artist_width + gap, artist_y), artist_text, font=pil_font_title, fill=(255, 255, 255))
+            scroll_offset_artist += scroll_speed
+
+        # Paste the text area into the right panel at (0,0) so it doesn't overlap the icons
         right_panel.paste(text_area_img, (0, 0))
 
-        # Paste the right panel into the composite image at x=32
+        # Paste the right panel into the composite image at x=32 (right half)
         composite.paste(right_panel, (32, 0))
 
         # Update the LED matrix with the composite image
