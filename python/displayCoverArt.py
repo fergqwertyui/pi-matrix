@@ -128,9 +128,9 @@ if len(sys.argv) > 2:
     )
     fetch_thread.start()
 
+    # Create the offscreen canvas once, then re-use it in the loop.
+    offscreen_canvas = matrix.CreateFrameCanvas()
     while True:
-        # Create a new offscreen canvas and clear it
-        offscreen_canvas = matrix.CreateFrameCanvas()
         offscreen_canvas.Clear()
 
         # Create composite PIL image (64×32)
@@ -185,9 +185,13 @@ if len(sys.argv) > 2:
         title_text = song_data.get("title", "Unknown Title")
         artist_text = song_data.get("artist", "Unknown Artist")
 
-        # Measure text sizes
-        title_width, title_height = pil_font_title.getsize(title_text)
-        artist_width, artist_height = pil_font_title.getsize(artist_text)
+        # Use getbbox() to measure text size
+        title_bbox = pil_font_title.getbbox(title_text)
+        title_width = title_bbox[2] - title_bbox[0]
+        title_height = title_bbox[3] - title_bbox[1]
+        artist_bbox = pil_font_title.getbbox(artist_text)
+        artist_width = artist_bbox[2] - artist_bbox[0]
+        artist_height = artist_bbox[3] - artist_bbox[1]
 
         # Layout: title on the first line and artist on the second.
         title_y = 0
@@ -206,7 +210,7 @@ if len(sys.argv) > 2:
                 text_draw.text((title_x + title_width + gap, title_y), title_text, font=pil_font_title, fill=(255, 255, 255))
             scroll_offset_title += scroll_speed
 
-        # Draw artist with horizontal scrolling if needed (artist text in grey):
+        # Draw artist with horizontal scrolling if needed (in grey):
         if artist_width <= 32:
             artist_x = (32 - artist_width) // 2
             text_draw.text((artist_x, artist_y), artist_text, font=pil_font_title, fill=GREY_PIL)
