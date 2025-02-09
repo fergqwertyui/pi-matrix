@@ -154,19 +154,17 @@ if len(sys.argv) > 2:
 
         # Draw progress bar on the right panel (located in the lower part)
         icon_size = 6
-        progress_bar_y = inner_y_start + inner_height - (icon_size)
+        progress_bar_y = inner_y_start + inner_height - (icon_size) - 2
         progress_ratio = 0 if song_data["duration_ms"] == 0 else min(max(song_data["progress_ms"] / song_data["duration_ms"], 0), 1)
         filled_width = int(progress_ratio * inner_width)
         draw.rectangle([inner_x_start, progress_bar_y,
                         inner_x_start + filled_width, progress_bar_y], fill=WHITE_PIL)
         draw.rectangle([inner_x_start + filled_width, progress_bar_y,
-                        inner_x_start + inner_width, progress_bar_y], fill=GREY_PIL)
+                        inner_x_start + inner_width-1, progress_bar_y], fill=GREY_PIL)
 
         # Draw play/pause icon on the right panel (just below the progress bar)
-        icon_y = progress_bar_y
+        icon_y = progress_bar_y + 2
         # Ensure the icon doesn't go off the bottom of the 32-pixel high panel
-        if icon_y + icon_size > 32:
-            icon_y = 32 - icon_size
         icon_x = inner_x_start + (inner_width - icon_size) // 2
         if song_data["is_playing"]:
             draw.rectangle([icon_x, icon_y, icon_x + 2, icon_y + icon_size], fill=SPOTIFY_GREEN_PIL)
