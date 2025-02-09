@@ -133,13 +133,12 @@ if len(sys.argv) > 2:
     )
     fetch_thread.start()
 
-    # Create the offscreen canvas once, then re-use it in the loop.
-    offscreen_canvas = matrix.CreateFrameCanvas()
     while True:
-        offscreen_canvas.Clear()
+        # Clear the matrix before drawing the new frame
+        matrix.Clear()
 
-        # Create composite PIL image (64×32)
-        composite = Image.new('RGB', (64, 32))
+        # Create composite PIL image (64x32) with a solid black background
+        composite = Image.new('RGB', (64, 32), BLACK_PIL)
 
         # Safely copy the album image using the lock
         with album_lock:
@@ -151,8 +150,7 @@ if len(sys.argv) > 2:
         else:
             composite.paste(Image.new('RGB', (32, 32), BLACK_PIL), (0, 0))
 
-        # Right side panel (32×32): first draw the progress bar and play/pause icon,
-        # then overlay the text area (which occupies the upper part).
+        # Right side panel (32x32)
         right_panel = Image.new('RGB', (32, 32), BLACK_PIL)
         draw = ImageDraw.Draw(right_panel)
         padding = 1
@@ -184,8 +182,8 @@ if len(sys.argv) > 2:
             triangle = [(icon_x, icon_y), (icon_x, icon_y + icon_size), (icon_x + icon_size, icon_y + icon_size // 2)]
             draw.polygon(triangle, fill=SPOTIFY_GREEN_PIL)
 
-        # Reserve the upper area for text (from y=0 up to progress_bar_y).
-        text_area_height = progress_bar_y  # this area will not cover the icons
+        # Reserve the upper area for text (from y=0 up to progress_bar_y)
+        text_area_height = progress_bar_y
         text_area_img = Image.new('RGB', (32, text_area_height), BLACK_PIL)
         text_draw = ImageDraw.Draw(text_area_img)
 
@@ -231,15 +229,17 @@ if len(sys.argv) > 2:
                 text_draw.text((artist_x + artist_width + gap, artist_y), artist_text, font=pil_font_title, fill=GREY_PIL)
             scroll_offset_artist += scroll_speed
 
-        # Paste the text area into the right panel at (0,0) so it doesn't overlap the icons
+        # Paste the text area into the right panel and then into the composite image
         right_panel.paste(text_area_img, (0, 0))
-
-        # Paste the right panel into the composite image at x=32 (right half)
         composite.paste(right_panel, (32, 0))
 
-        # Update the LED matrix with the composite image
-        offscreen_canvas.SetImage(composite.convert('RGB'))
-        offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
+        # Instead of using an offscreen canvas, update every pixel using matrix.SetPixel
+        pixels = composite.load()
+        for y in range(32):
+            for x in range(64):
+                r, g, b = pixels[x, y]
+                matrix.SetPixel(x, y, r, g, b)
+
         time.sleep(0.05)
 
 else:
