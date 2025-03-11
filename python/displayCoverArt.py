@@ -55,7 +55,7 @@ def fetch_song_info(username, token_path, default_image):
                     try:
                         response = requests.get(new_url, timeout=2)
                         new_album = Image.open(BytesIO(response.content)).convert('RGB')
-                        new_album.thumbnail((32, 32), Image.Resampling.LANCZOS)
+                        new_album.thumbnail((32, 32), Image.ANTIALIAS)
                         with album_lock:
                             album_image = new_album
                         prev_url = new_url
@@ -97,9 +97,11 @@ if len(sys.argv) > 2:
     options = RGBMatrixOptions()
     options.rows = 32
     options.cols = 64
-    options.chain_length = int(config['DEFAULT']['chain_length'])
+    options.parallel = 1
+    options.chain_length = 1
+    #options.chain_length = int(config['DEFAULT']['chain_length'])
     options.hardware_mapping = "adafruit-hat"
-    options.gpio_slowdown = int(config['DEFAULT']['gpio_slowdown'])
+    #options.gpio_slowdown = int(config['DEFAULT']['gpio_slowdown'])
     options.brightness = int(config['DEFAULT']['brightness'])
 
     default_image = os.path.join(dir_path, config['DEFAULT']['default_image'])
@@ -238,9 +240,9 @@ if len(sys.argv) > 2:
         composite.paste(right_panel, (32, 0))
 
         # Update the LED matrix with the composite image
-        offscreen_canvas.SetImage(composite.convert('RGB'))
-        offscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
-        time.sleep(0.05)
+        matrix.SetImage(composite.convert('RGB'))
+        #xoffscreen_canvas = matrix.SwapOnVSync(offscreen_canvas)
+        time.sleep(0.1)
 
 else:
     print("Usage: %s username token_path" % sys.argv[0])
